@@ -60,7 +60,7 @@ func WebsocketHandler(c *gin.Context) { //对用户进行websocket协议升级,�
 		Conn:      conn,
 		LastSeen:  time.Now(),
 		CloseChan: make(chan bool),
-		SendChan:  make(chan []byte, 256), // 带缓冲的通道
+		SendChan:  make(chan []byte, 512), // 带缓冲的通道
 		Heartbeat: PingPeriod,
 		Timeout:   PongWait,
 	}
@@ -126,6 +126,7 @@ func (u *OnlineUser) readPump() {
 			log.Printf("消息解析失败，%v", err)
 			continue
 		}
+		message = models.GenerateMessage(message.UserID, message.TargetID, message.Cmd, message.Content, 0)
 
 		//处理业务消息
 		ForwardMessage(message)
@@ -185,7 +186,7 @@ func ForwardMessage(msg *models.Message) {
 	msgBytes, _ := json.Marshal(msg)
 	target, ok := onlineUsers.Load(targetid)
 	if !ok {
-		log.Printf("用户%s不在线", targetid)
+		log.Printf("e用户%s不在线", targetid)
 		//redis离线库
 		key := fmt.Sprintf("offline:%s", targetid)
 		global.RedisDB.RPush(key, msgBytes)
@@ -196,7 +197,9 @@ func ForwardMessage(msg *models.Message) {
 	targetUser.SendChan <- msgBytes
 	//此时消息已经发送到用户的发送通道中，认为消息已经送达，将对消息持久化处理
 	//不过这样用户第一次收到的消息结构体里的status都为0，从历史库里再读取时则为1 //所以这个状态会有什么用呢（咳咳）
-	msg.Status = 1 //状态改为1，来表示消息已经送达
+	if msg.Cmd != 2 {
+		msg.Status = 1 //状态改为1，来表示消息已经送达
+	}
 	//将消息存储在历史库里
 	utils.StoreInMysql(msg)
 

@@ -54,8 +54,9 @@ func Register(ctx *gin.Context) {
 
 	//要先加系统消息的好友哦
 	var friendship = &models.Friendship{
-		UserId:   newUser.UserID,
-		FriendId: "000000",
+		UserId:     newUser.UserID,
+		FriendId:   "000000",
+		FriendName: "系统消息",
 	}
 	if err := global.DB.AutoMigrate(&models.Friendship{}); err != nil {
 		log.Println("好友添加失败")

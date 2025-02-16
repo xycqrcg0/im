@@ -9,11 +9,7 @@ import (
 
 // StoreInMysql 将消息存入历史库
 func StoreInMysql(msg *models.Message) {
-	if err := global.DB.AutoMigrate(msg); err != nil {
-		log.Println("模型绑定失败")
-		return
-	}
-	if err := global.DB.Create(msg).Error; err != nil {
+	if err := global.DB.Model(&models.Message{}).Create(msg).Error; err != nil {
 		log.Println("消息存储失败")
 		return
 	}

@@ -3,16 +3,18 @@ package models
 import (
 	"github.com/sony/sonyflake"
 	"strconv"
+	"time"
 )
 
-type Message struct {
-	Id           uint64 `json:"id"`            //消息ID
-	ConversionID string `json:"conversion_id"` //会话ID
-	UserID       string `json:"user_id"`       //谁发的
-	TargetID     string `json:"target_id"`     //对端用户ID/群ID
-	Cmd          int    `json:"cmd"`           // 0=私聊 1=群聊 2=系统通知
-	Content      string `json:"content"`       //消息的内容
-	Status       int    `json:"status"`        //0表示未收到，1表示已收到；系统消息中，2表示消息已经处理
+type Message struct { //这个结构体是用来存储消息的
+	Id             uint64 `json:"id" gorm:"primarykey"` //消息ID //此项无需客户端填写，传json时填0即可
+	ConversationID string `json:"conversation_id"`      //会话ID //此项无需客户端填写，传json时填""即可
+	UserID         string `json:"user_id"`              //谁发的
+	TargetID       string `json:"target_id"`            //对端用户ID/群ID
+	Cmd            int    `json:"cmd"`                  // 0=私聊 1=群聊 2=系统通知
+	Content        string `json:"content"`              //消息的内容
+	Status         int    `json:"status"`               //0表示未收到，1表示已收到；系统消息中，2表示消息已经处理 //此项无需客户端填写，传json时填0即可
+	Timestamp      int64  `json:"timestamp"`            //毫秒级时间戳 //此项无需客户端填写，传json时填0即可
 }
 
 // 雪花算法生成与时间有关的有序唯一id
@@ -20,29 +22,31 @@ var flake = sonyflake.NewSonyflake(sonyflake.Settings{})
 
 func GenerateMessage(userId string, targetId string, cmd int, content string, status int) *Message {
 	id, _ := flake.NextID()
-	var msg = &Message{
-		Id:       id,
-		UserID:   userId,
-		TargetID: targetId,
-		Cmd:      cmd,
-		Content:  content,
-		Status:   status,
-	}
 	//单聊时会话id是两人id组合，群聊时是群id，系统消息是000000+用户id
-	var conversionID string
+	var conversationID string
 	switch cmd {
 	case 0:
-		conversionID = GenerateConversionID(userId, targetId)
+		conversationID = GenerateConversationID(userId, targetId)
 	case 1:
-		conversionID = targetId
+		conversationID = targetId
 	case 2:
-		conversionID = "000000" + targetId
+		conversationID = "000000" + targetId
 	}
-	msg.ConversionID = conversionID
+
+	var msg = &Message{
+		Id:             id,
+		ConversationID: conversationID,
+		UserID:         userId,
+		TargetID:       targetId,
+		Cmd:            cmd,
+		Content:        content,
+		Status:         status,
+		Timestamp:      time.Now().UnixNano(),
+	}
 	return msg
 }
 
-func GenerateConversionID(id1 string, id2 string) string {
+func GenerateConversationID(id1 string, id2 string) string {
 	partA, _ := strconv.Atoi(id1)
 	partB, _ := strconv.Atoi(id2)
 	if partA < partB {
