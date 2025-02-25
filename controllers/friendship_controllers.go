@@ -29,8 +29,8 @@ func AddFriendRequest(c *gin.Context) {
 		return
 	}
 
-	msg := models.GenerateMessage(data.FromID, data.ToID, 2, fmt.Sprintf("用户%s(%s)请求加你为好友", fromUsername, data.FromID), 0)
-	ForwardMessage(msg)
+	msg := models.GenerateMessage("000000", data.ToID, 2, fmt.Sprintf("用户%s(%s)请求加你为好友", fromUsername, data.FromID), 0)
+	ForwardMessage(msg, "")
 }
 
 func AddFriendResponse(c *gin.Context) {
@@ -45,7 +45,7 @@ func AddFriendResponse(c *gin.Context) {
 
 	if response == "reject" {
 		msg := models.GenerateMessage("000000", data.FromID, 2, fmt.Sprintf("用户%s(%s)拒绝了你的请求", name, data.ToID), 2)
-		ForwardMessage(msg)
+		ForwardMessage(msg, "")
 	} else if response == "accept" {
 		//获取对方名字
 		var friend = &models.User{}
@@ -80,9 +80,13 @@ func AddFriendResponse(c *gin.Context) {
 
 		//向From用户发送通知
 		msg := models.GenerateMessage(data.ToID, data.FromID, 0, "我已同意你的好友请求", 0)
-		ForwardMessage(msg)
+		ForwardMessage(msg, "")
+	} else {
+		c.JSON(http.StatusNotFound, "")
+		return
 	}
 
+	//修改系统消息的状态
 	conversationId := "000000" + id
 	var user = &models.User{}
 	if err := global.DB.Where("user_id=?", data.FromID).First(&user).Error; err != nil {
@@ -99,11 +103,24 @@ func AddFriendResponse(c *gin.Context) {
 func DeleteFriend(c *gin.Context) {
 	name := c.MustGet("username").(string)
 	userid := c.MustGet("userid").(string)
-	targetId := c.Param("id")
+	targetId := c.Query("id")
+
+	//要提供目标用户
+	if targetId == "" {
+		c.JSON(http.StatusNotFound, nil)
+		return
+	}
 
 	//系统消息用户是不能够删除的哦
 	if targetId == "000000" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "此用户不支持删除"})
+		return
+	}
+
+	//删除的这个人起码得先是好友
+	var ju int64
+	if err := global.DB.Model(&models.Friendship{}).Where("user_id=? AND friend_id=?", userid, targetId).Count(&ju).Error; err != nil {
+		c.JSON(http.StatusNotFound, nil)
 		return
 	}
 
@@ -116,14 +133,16 @@ func DeleteFriend(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录删除失败"})
 		return
 	}
+
 	//清除聊天记录
 	conversationId := models.GenerateConversationID(userid, targetId)
 	if err := global.DB.Model(&models.Message{}).Where("conversation_id=?", conversationId).Delete(&models.Message{}).Error; err != nil {
 		log.Println("聊天记录删除失败")
 	}
+
 	//通过系统消息通知被删除好友
 	msg := models.GenerateMessage("000000", targetId, 2, fmt.Sprintf("用户%s(%s)删除了与你的好友关系", name, userid), 2)
-	ForwardMessage(msg)
+	ForwardMessage(msg, "")
 }
 
 func GetFriends(c *gin.Context) {
@@ -138,10 +157,6 @@ func GetFriends(c *gin.Context) {
 		return
 	}
 	log.Printf("%v", friends)
-	//friendsByte, err := json.Marshal(friends)
-	//if err != nil {
-	//	log.Println("序列化失败")
-	//	return
-	//}
+
 	c.JSON(http.StatusOK, friends)
 }

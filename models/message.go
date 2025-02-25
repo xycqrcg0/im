@@ -55,3 +55,11 @@ func GenerateConversationID(id1 string, id2 string) string {
 		return id2 + id1
 	}
 }
+
+/*
+message分类：
+userid 正常， cmd = 0 : 正常私聊，对应conversation_id = user_id组合
+userid 正常， cmd = 1 : 正常群聊，对应conversation_id = group_id
+userid 000000， cmd = 2 : 正常系统消息，好友请求与群聊外部通知，如通知某人自己进入了每个群聊，对应conversation_id = 000000 + user_id
+userid 000000， cmd = 1 : 群聊内部通知消息，如xxx加入了群聊，对应conversation_id = group_id
+*/

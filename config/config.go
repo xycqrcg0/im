@@ -72,10 +72,6 @@ func InitConfig() {
 }
 
 func initDB() {
-	//user := os.Getenv("DB_USER")
-	//pwd := os.Getenv("DB_PASSWORD")
-	//port := os.Getenv("DB_PORT")
-	//name := os.Getenv("DB_NAME")
 	port := "3306"
 	user := "root"
 	pwd := "123456"

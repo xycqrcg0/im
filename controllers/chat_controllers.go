@@ -85,7 +85,10 @@ func WebsocketHandler(c *gin.Context) { //对用户进行websocket协议升级,�
 			msg := &models.Message{}
 			json.Unmarshal([]byte(msgByte), &msg)
 			msg.Status = 1 //已送达
-			utils.StoreInMysql(msg)
+			if err := utils.StoreInMysql(msg); err != nil {
+				log.Println("error:", err)
+				return
+			}
 		}()
 	}
 
@@ -117,7 +120,7 @@ func (u *OnlineUser) readPump() {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.Printf("%s异常断开，%v/n", u.UserID, err)
 			}
-			//此处还有补充
+			//此处可以有补充
 			u.CloseChan <- true
 			break
 		}
@@ -129,7 +132,26 @@ func (u *OnlineUser) readPump() {
 		message = models.GenerateMessage(message.UserID, message.TargetID, message.Cmd, message.Content, 0)
 
 		//处理业务消息
-		ForwardMessage(message)
+		if message.Cmd == 1 { //处理群聊消息,鉴于这是个小demo，采用了写扩散（读扩散处理不太会）
+			var members []string
+			if err := global.DB.Model(&models.GroupMember{}).Where("group_id=?", message.TargetID).Pluck("user_id", &members).Error; err != nil {
+				log.Println("群聊成员列表获取失败")
+				return
+			}
+			for _, memberId := range members {
+				go ForwardMessage(message, memberId)
+			}
+			if message.Cmd != 2 {
+				message.Status = 1 //状态改为1，来表示消息已经送达
+			}
+			//将消息存储在历史库里
+			if err := utils.StoreInMysql(message); err != nil {
+				log.Println("error:", err)
+				return
+			}
+		} else {
+			go ForwardMessage(message, "")
+		}
 	}
 }
 
@@ -181,12 +203,23 @@ func (u *OnlineUser) writePump() {
 	}
 }
 
-func ForwardMessage(msg *models.Message) {
-	targetid := msg.TargetID
+// ForwardMessage 私聊/系统消息时id填""
+func ForwardMessage(msg *models.Message, id string) {
+	var targetid string
+	if id == "" {
+		targetid = msg.TargetID
+	} else {
+		targetid = id
+	}
+
+	if targetid == msg.UserID { //群聊中，自己发的信息就不要再收到一遍了（不过这也导致自己不能和自己私聊了）
+		return
+	}
+
 	msgBytes, _ := json.Marshal(msg)
 	target, ok := onlineUsers.Load(targetid)
 	if !ok {
-		log.Printf("e用户%s不在线", targetid)
+		log.Printf("用户%s不在线", targetid)
 		//redis离线库
 		key := fmt.Sprintf("offline:%s", targetid)
 		global.RedisDB.RPush(key, msgBytes)
@@ -196,19 +229,26 @@ func ForwardMessage(msg *models.Message) {
 
 	targetUser.SendChan <- msgBytes
 	//此时消息已经发送到用户的发送通道中，认为消息已经送达，将对消息持久化处理
-	//不过这样用户第一次收到的消息结构体里的status都为0，从历史库里再读取时则为1 //所以这个状态会有什么用呢（咳咳）
-	if msg.Cmd != 2 {
-		msg.Status = 1 //状态改为1，来表示消息已经送达
-	}
-	//将消息存储在历史库里
-	utils.StoreInMysql(msg)
+	//不过这样用户第一次收到的消息结构体里的status都为0，从历史库里再读取时则为1 ，（可以用来区分是不是未读消息？）//所以这个状态会有什么用呢（咳咳）
 
-	//select {
-	//case targetUser.SendChan <- msgBytes:
-	//	msg.Status = 1
-	//	utils.StoreInMysql(msg)
-	//default:
-	//	log.Println("发送通道已满")
-	//  这种情况还没想好怎么处理比较好，只能先委屈一下用户，先在这里阻塞一下了。
-	//}
+	if id == "" { //私聊/系统消息时，消息在这里存储；群聊时，为防止同一条消息多次存储，写入历史库独立执行
+
+		if msg.Cmd != 2 {
+			msg.Status = 1 //状态改为1，来表示消息已经送达
+		}
+		//将消息存储在历史库里
+		if err := utils.StoreInMysql(msg); err != nil {
+			log.Println("error:", err)
+			return
+		}
+
+		//select {
+		//case targetUser.SendChan <- msgBytes:
+		//	msg.Status = 1
+		//	utils.StoreInMysql(msg)
+		//default:
+		//	log.Println("发送通道已满")
+		//  这种情况还没想好怎么处理比较好，只能先委屈一下用户，先在这里阻塞一下了。（不过用go再开一个线程应该还好）
+		//}
+	}
 }

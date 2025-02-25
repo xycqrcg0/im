@@ -7,6 +7,7 @@ import (
 	"im/utils"
 	"log"
 	"net/http"
+	"regexp"
 )
 
 func Register(ctx *gin.Context) {
@@ -16,17 +17,12 @@ func Register(ctx *gin.Context) {
 		return
 	}
 
-	//var count int64
-	//if err := global.DB.Model(&newUser).Where("username=?", newUser.Username).Count(&count); err != nil {
-	//	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error})
-	//	return
-	//}
-	//
-	//if count > 0 {
-	//	ctx.JSON(http.StatusBadRequest, gin.H{"error": "该用户名已存在"})
-	//	return
-	//}
-
+	// 正则表达式：只允许字母、数字和_ . ，且长度至少4个字符
+	re := regexp.MustCompile("^[a-zA-Z0-9_.]{4,}$")
+	if newUser.Username == "" || len(newUser.Username) > 20 || !re.MatchString(newUser.Password) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "请按要求输入用户名和密码"})
+		return
+	}
 	hashed, err1 := utils.HashPassword(newUser.Password)
 	if err1 != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error2": err1.Error()})

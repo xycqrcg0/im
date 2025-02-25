@@ -1,16 +1,20 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+	"time"
+)
 
 type Group struct {
-	gorm.Model
-	Id        string
-	OwnerId   string
+	Id        string `gorm:"primarykey"`
+	OwnerId   string `gorm:"owner_id"`
 	GroupName string
+	CreatedAt time.Time
 }
 
 type GroupMember struct {
 	gorm.Model
-	GroupId string
-	UserId  string
+	GroupName string `gorm:"group_name"`
+	GroupId   string `gorm:"group_id"`
+	UserId    string `gorm:"user_id"`
 }
